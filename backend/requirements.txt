@@ -37,5 +37,3 @@ rapidfuzz==3.9.7
 # would have added. Skip these three lines if you don't want that lookup
 # capability at all.
 requests==2.32.3
-chromadb==0.5.20
-sentence-transformers==3.2.1
