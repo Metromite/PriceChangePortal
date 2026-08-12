@@ -166,7 +166,7 @@ interface SlideDef { key: string; label: string; render: () => JSX.Element; }
 const ALL_SLIDES: SlideDef[] = [
   { key: "home", label: "Overview", render: () => <HomeTab driver="" onSelectDriver={() => {}} onDriverListLoaded={() => {}} /> },
   { key: "driver-performance", label: "Driver Performance", render: () => <DriverPerformanceTab driver="" /> },
-  { key: "lead-time", label: "Lead Time", render: () => <LeadTimeTab driver="" /> },
+  { key: "lead-time", label: "Lead Time", render: () => <LeadTimeTab driver="" setLeadTimeBand={() => {}} setClassification={() => {}} /> },
   { key: "order-summary", label: "Order Summary", render: () => <OrderSummaryTab driver="" /> },
   { key: "area-analytics", label: "Area Analytics", render: () => <AreaAnalyticsTab driver="" /> },
   { key: "not-supplied", label: "Not Supplied", render: () => <NotSuppliedTab driver="" /> },
@@ -1315,3 +1315,4 @@ function CanvasCardWrapper({
     </div>
   );
 }
+

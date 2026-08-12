@@ -275,7 +275,7 @@ export function BandClassificationMatrixTable({ data }: { data: LeadTimeData }) 
   );
 }
 
-function withLeadTimeData<P extends { data: LeadTimeData }>(Comp: (p: P) => JSX.Element) {
+function withLeadTimeData<P extends { data: LeadTimeData }>(Comp: (p: P) => JSX.Element | null) {
   return function Standalone({ driver = "", globalFilters, ...rest }: { driver?: string; globalFilters?: GlobalFilters } & Omit<P, "data">) {
     const { data, error } = useLeadTimeData(driver, globalFilters);
     if (error) return <div className="glass-card error-text">{error}</div>;
@@ -291,3 +291,4 @@ export const StandaloneAvgByClassificationChart = withLeadTimeData(AvgByClassifi
 export const StandaloneDistributionChart = withLeadTimeData(DistributionChart);
 export const StandaloneByClassificationTable = withLeadTimeData(ByClassificationTable);
 export const StandaloneBandClassificationMatrixTable = withLeadTimeData(BandClassificationMatrixTable);
+
