@@ -1,0 +1,33 @@
+name: Fix no stock quantity mode
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch portal
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('index.html')
+          s=p.read_text(encoding='utf-8')
+          marker="const tel=w.querySelector('.tel');tel.addEventListener('input',()=>{tel.value=tel.value.replace(/[^0-9]/g,'')});"
+          add="""const tel=w.querySelector('.tel');tel.addEventListener('input',()=>{tel.value=tel.value.replace(/[^0-9]/g,'')});const nsBox=w.querySelector('.nostock');const syncNoStock=()=>{const on=nsBox.checked;w.querySelectorAll('.qty').forEach(q=>{if(on)q.value='';q.disabled=on;q.setAttribute('aria-disabled',String(on))})};nsBox.addEventListener('change',syncNoStock);syncNoStock();"""
+          if marker not in s: raise SystemExit('target marker not found')
+          s=s.replace(marker,add,1)
+          p.write_text(s,encoding='utf-8')
+          PY
+      - name: Commit patch and cleanup
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html .github/workflows/fix-no-stock.yml
+          git commit -m 'Fix no-stock quantity behavior' --allow-empty
+          git push
+          git rm .github/workflows/fix-no-stock.yml
+          git commit -m 'Remove temporary no-stock workflow'
+          git push
