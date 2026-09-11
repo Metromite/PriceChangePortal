@@ -1,8 +1,7 @@
 name: Apply portal fixes
 on:
-  workflow_dispatch:
-  push:
-    branches: [main]
+  issues:
+    types: [opened]
 permissions:
   contents: write
 jobs:
