@@ -1,0 +1,38 @@
+name: Apply requested portal fixes
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  fix:
+    if: github.event.head_commit.message != 'Apply requested portal fixes'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch index.html
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('index.html')
+          s=p.read_text(encoding='utf-8')
+          changes=[
+            ("const name=w.querySelector('.customer-name').value.trim(),loc=w.querySelector('.location').value.trim(),ph=w.querySelector('.pharm').value.trim(),ns=w.querySelector('.nostock').checked;",
+             "const name=w.querySelector('.customer-name').value.trim(),locEl=w.querySelector('.location'),loc=String(locEl?.selectedOptions?.[0]?.value||locEl?.value||'').trim(),ph=w.querySelector('.pharm').value.trim(),ns=w.querySelector('.nostock').checked;"),
+            ('<div class="items"></div>', '<div class="items"><div class="small muted" style="font-weight:800;text-transform:uppercase;letter-spacing:.9px;margin-bottom:2px">Items</div></div>'),
+            ('<div class="small muted" style="font-weight:800;text-transform:uppercase;letter-spacing:.7px;margin-bottom:4px">Item</div><strong>'+esc(i.line_no)+'. '+esc(i.item_description)+'</strong>', '<div class="small muted" style="font-weight:800;text-transform:uppercase;letter-spacing:.7px;margin-bottom:4px">'+esc(i.line_no)+'</div><strong>'+esc(i.item_description)+'</strong>'),
+            ("toast('Visit saved successfully');await load()", "toast('Visit saved successfully');editingVisitId=null;await load();requestAnimationFrame(()=>document.querySelector('.customer')?.scrollIntoView({behavior:'smooth',block:'center'}))")
+          ]
+          for old,new in changes:
+              if old not in s: raise SystemExit('Expected pattern not found: '+old[:80])
+              s=s.replace(old,new,1)
+          p.write_text(s,encoding='utf-8')
+          PY
+      - name: Remove workflow and commit
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html
+          git rm .github/workflows/apply-requested-fixes.yml
+          git commit -m 'Apply requested portal fixes'
+          git push
