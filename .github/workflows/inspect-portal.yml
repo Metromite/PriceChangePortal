@@ -9,26 +9,38 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Inspect and publish snippets
+      - name: Apply requested portal fixes
         run: |
           python - <<'PY'
-          import re
-          s=open('index.html',encoding='utf-8').read()
-          keys=['location','editingVisitId','buildList','save','\.save','\.item','items','dispatchops_driver_save_visit','new submission']
-          out=[]
-          for key in keys:
-            out.append('\n=== '+key+' ===')
-            p=0
-            n=0
-            while True:
-              p=s.find(key,p)
-              if p<0 or n>=8: break
-              out.append(s[max(0,p-1200):p+3500])
-              p+=max(1,len(key)); n+=1
-          open('_inspect_output.txt','w',encoding='utf-8').write('\n'.join(out))
+          from pathlib import Path
+          p=Path('index.html')
+          s=p.read_text(encoding='utf-8')
+          old="const name=w.querySelector('.customer-name').value.trim(),loc=w.querySelector('.location').value.trim(),ph=w.querySelector('.pharm').value.trim(),ns=w.querySelector('.nostock').checked;"
+          new="const name=w.querySelector('.customer-name').value.trim(),locEl=w.querySelector('.location'),loc=(locEl?.value||locEl?.selectedOptions?.[0]?.textContent||w.dataset.location||'').trim(),ph=w.querySelector('.pharm').value.trim(),ns=w.querySelector('.nostock').checked;"
+          if old not in s: raise SystemExit('save location expression not found')
+          s=s.replace(old,new,1)
+          old="const tel=w.querySelector('.tel');tel.addEventListener('input',()=>{tel.value=tel.value.replace(/[^0-9]/g,'')});"
+          new="const locEl=w.querySelector('.location');locEl.addEventListener('change',()=>{w.dataset.location=locEl.value.trim()});w.dataset.location=locEl.value.trim();const tel=w.querySelector('.tel');tel.addEventListener('input',()=>{tel.value=tel.value.replace(/[^0-9]/g,'')});"
+          if old not in s: raise SystemExit('location change hook not found')
+          s=s.replace(old,new,1)
+          old='<div class="items"></div>'
+          new='<div class="items"><div class="small muted" style="font-weight:800;text-transform:uppercase;letter-spacing:.9px;margin-bottom:2px">Items</div></div>'
+          if old not in s: raise SystemExit('items container not found')
+          s=s.replace(old,new,1)
+          old='<div class="small muted" style="font-weight:800;text-transform:uppercase;letter-spacing:.7px;margin-bottom:4px">Item</div><strong>'+esc(i.line_no)+'. '+esc(i.item_description)+'</strong>'
+          new='<div class="small muted" style="font-weight:800;text-transform:uppercase;letter-spacing:.7px;margin-bottom:4px">'+esc(i.line_no)+'</div><strong>'+esc(i.item_description)+'</strong>'
+          if old not in s: raise SystemExit('item label not found')
+          s=s.replace(old,new,1)
+          old="toast('Visit saved successfully');await load()"
+          new="toast('Visit saved successfully');editingVisitId=null;await load();requestAnimationFrame(()=>document.querySelector('.customer')?.scrollIntoView({behavior:'smooth',block:'center'}))"
+          if old not in s: raise SystemExit('save success flow not found')
+          s=s.replace(old,new,1)
+          p.write_text(s,encoding='utf-8')
           PY
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add _inspect_output.txt
-          git diff --cached --quiet || git commit -m 'Inspect portal save and edit logic'
+          git checkout HEAD^ -- .github/workflows/inspect-portal.yml
+          rm -f _inspect_output.txt
+          git add index.html .github/workflows/inspect-portal.yml _inspect_output.txt
+          git commit -m 'Fix area save and reset edited visit to new submission'
           git push
