@@ -9,16 +9,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Inspect
+      - name: Inspect and publish snippets
         run: |
           python - <<'PY'
+          import re
           s=open('index.html',encoding='utf-8').read()
-          for key in ['const upload','function upload','Photo upload','\.photo','nostock','\.save','addEventListener(\'click\'']:
-            print('\n===',key,'===')
+          keys=['location','editingVisitId','buildList','save','\.save','\.item','items','dispatchops_driver_save_visit','new submission']
+          out=[]
+          for key in keys:
+            out.append('\n=== '+key+' ===')
             p=0
+            n=0
             while True:
               p=s.find(key,p)
-              if p<0: break
-              print(s[max(0,p-700):p+1800])
-              p+=len(key)
+              if p<0 or n>=8: break
+              out.append(s[max(0,p-1200):p+3500])
+              p+=max(1,len(key)); n+=1
+          open('_inspect_output.txt','w',encoding='utf-8').write('\n'.join(out))
           PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add _inspect_output.txt
+          git diff --cached --quiet || git commit -m 'Inspect portal save and edit logic'
+          git push
