@@ -6,7 +6,7 @@ permissions:
   contents: write
 jobs:
   fix:
-    if: github.event.head_commit.message != 'Final portal UI and area save fix'
+    if: github.event.head_commit.message != 'Final portal UI and save retry fix'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -16,21 +16,71 @@ jobs:
           from pathlib import Path
           p=Path('index.html')
           s=p.read_text(encoding='utf-8')
-          old='.evidence{display:grid;grid-template-columns:1fr 1fr;gap:12px}'
-          new='.items{margin-top:12px}.evidence{display:grid;grid-template-columns:1fr 1fr;gap:12px}'
+
+          # Header controls on the left.
+          s=s.replace('.top{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:14px}', '.top{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:14px}.top-actions{order:-1;align-items:center}')
+          s=s.replace('<div class="row"><button id="menuBtn"', '<div class="row top-actions"><button id="menuBtn"', 1)
+
+          # More breathing room above Items.
+          s=s.replace('.items{margin-top:12px}.items{margin-top:12px}', '.items{margin-top:24px}', 1)
+          s=s.replace('.items{margin-top:12px}', '.items{margin-top:24px}', 1)
+
+          # Menu drawer scrolls, while the page behind it stays locked.
+          s=s.replace('.drawer.open{transform:translateX(0)}', '.drawer.open{transform:translateX(0);touch-action:auto}')
+          s=s.replace('.backdrop{position:fixed;', 'html.menu-open,body.menu-open{overflow:hidden;overscroll-behavior:none}body.menu-open{touch-action:none}.drawer{touch-action:auto;-webkit-overflow-scrolling:touch}.backdrop{position:fixed;')
+          old="function openMenu(){buildList();$('#drawer').classList.add('open');$('#backdrop').classList.remove('hide')}function closeMenu(){$('#drawer').classList.remove('open');$('#backdrop').classList.add('hide')}"
+          new="function openMenu(){buildList();document.documentElement.classList.add('menu-open');document.body.classList.add('menu-open');$('#drawer').classList.add('open');$('#backdrop').classList.remove('hide')}function closeMenu(){document.documentElement.classList.remove('menu-open');document.body.classList.remove('menu-open');$('#drawer').classList.remove('open');$('#backdrop').classList.add('hide')}"
           if old in s: s=s.replace(old,new,1)
-          old="const tel=w.querySelector('.tel');"
-          new="const loc=w.querySelector('.location');loc.dataset.selectedArea=loc.value;loc.addEventListener('change',()=>{loc.dataset.selectedArea=loc.value;clearValidation()});const tel=w.querySelector('.tel');"
-          if old not in s: raise SystemExit('location listener anchor not found')
-          if "loc.dataset.selectedArea=loc.value" not in s: s=s.replace(old,new,1)
-          old="loc=String(locEl?.selectedOptions?.[0]?.value||locEl?.value||'').trim()"
-          new="loc=String(locEl?.value||locEl?.dataset?.selectedArea||'').trim()"
+
+          # Re-arm Save immediately whenever the user fixes a field after a validation error.
+          old="el.addEventListener('input',clearValidation);el.addEventListener('change',clearValidation)"
+          new="el.addEventListener('input',()=>{clearValidation();w.querySelector('.save').disabled=false;hideSaving()});el.addEventListener('change',()=>{clearValidation();w.querySelector('.save').disabled=false;hideSaving()})"
           if old in s: s=s.replace(old,new,1)
+
+          # Replace saveVisit with a retry-safe version that always reads current field values.
+          start=s.index('async function saveVisit(c,a,w){')
+          end=s.index('function buildList(){',start)
+          fn=r'''async function saveVisit(c,a,w){
+          const m=w.querySelector('.msg'),saveBtn=w.querySelector('.save');
+          saveBtn.disabled=false;hideSaving();
+          const name=String(w.querySelector('.customer-name')?.value||'').trim();
+          const locEl=w.querySelector('.location');
+          const loc=String(locEl?.value||'').trim();
+          const ph=String(w.querySelector('.pharm')?.value||'').trim();
+          const ns=!!w.querySelector('.nostock')?.checked;
+          const qs=[...w.querySelectorAll('.qty')];
+          const vals=qs.map(x=>x.value.trim()===''?0:Number(x.value));
+          const fail=(text,focusEl)=>{hideSaving();saveBtn.disabled=false;setmsg(m,text,false);if(focusEl)requestAnimationFrame(()=>focusEl.focus());return false};
+          setmsg(m,'',true);
+          if(!name)return fail('Customer name is required.',w.querySelector('.customer-name'));
+          if(!loc)return fail('Please select an area before saving.',locEl);
+          if(!ph)return fail('Pharmacist name is required.',w.querySelector('.pharm'));
+          if(!/^[A-Za-zÀ-ÖØ-öø-ÿ\s.'-]+$/.test(ph))return fail('Pharmacist name can contain letters, spaces, apostrophes, dots and hyphens only.',w.querySelector('.pharm'));
+          if(vals.some(x=>!Number.isInteger(x)||x<0))return fail('Quantities must be whole numbers 0 or greater.');
+          if(!ns&&!vals.some(x=>x>0))return fail('Enter a quantity or select No Stock.');
+          if(ns&&vals.some(x=>x>0))return fail('No Stock cannot be selected with a quantity.');
+          try{
+            saveBtn.disabled=true;showSaving();
+            let photo=w.querySelector('.photo').files[0],path=w.dataset.attachment||null;
+            if(photo)path=await upload(await compress(photo),photo.name,photo.type,'photo');
+            else if(!path)throw Error('A pharmacy/place photo is required before saving.');
+            let sp=w.dataset.signature||null;
+            if(w.dataset.newSignature)sp=await upload(w.dataset.newSignature,'signature.png','image/png','signature');
+            const items=qs.map(x=>({item_id:x.dataset.item,quantity:Number(x.value||0)}));
+            const r=await api('/rest/v1/rpc/dispatchops_driver_save_visit',{p_token:token,p_visit:{id:w.dataset.visitId||null,assignment_id:a.id,campaign_id:c.campaign.id,customer_name:name,location:loc,telephone:w.querySelector('.tel').value.trim(),pharmacist_name:ph,notes:w.querySelector('.notes').value.trim(),attachment_path:path,signature_path:sp,status:ns?'NO_STOCK':'SUBMITTED',items}});
+            w.dataset.visitId=r.visit_id;w.dataset.attachment=path||'';w.dataset.signature=sp||'';delete w.dataset.newSignature;
+            hideSaving();toast('Visit saved successfully');editingVisitId=null;await load();
+            requestAnimationFrame(()=>document.querySelector('.customer')?.scrollIntoView({behavior:'smooth',block:'center'}));
+          }catch(e){hideSaving();saveBtn.disabled=false;setmsg(m,e.message||'Could not save',false)}finally{saveBtn.disabled=false;hideSaving()}
+          }
+          '''
+          s=s[:start]+fn+s[end:]
+
           p.write_text(s,encoding='utf-8')
           PY
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add index.html
-          git rm -f .github/workflows/inspect-portal.yml .github/workflows/final-portal-fix.yml .github/workflows/inspect-save.yml .github/workflows/extract-save.yml _inspect_output.txt _debug-save.txt || true
-          git commit -m 'Final portal UI and area save fix'
+          git rm -f .github/workflows/inspect-portal.yml .github/workflows/final-ui-save-fix.yml .github/workflows/final-portal-fix.yml .github/workflows/inspect-save.yml .github/workflows/extract-save.yml _inspect_output.txt _debug-save.txt || true
+          git commit -m 'Final portal UI and save retry fix'
           git push
