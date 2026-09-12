@@ -1,0 +1,103 @@
+name: Definitive Price Portal validation fix
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch validation logic directly
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+          p=Path('index.html')
+          s=p.read_text(encoding='utf-8')
+
+          # Remove the old document-level handlers which simply erased validation errors.
+          s=re.sub(r'document\.addEventListener\(\'input\',e=>\{const w=e\.target\.closest\(\'\.customer\'\);.*?\}\);document\.addEventListener\(\'change\',e=>\{const w=e\.target\.closest\(\'\.customer\'\);.*?\}\);', '', s, count=1, flags=re.S)
+
+          # Inject one authoritative validator at the end of the page script. It runs after
+          # the page's own handlers, so legacy handlers cannot erase the current error list.
+          marker='</script>'
+          patch=r'''\n/* Definitive validation retry controller */
+(function(){
+  function errorsFor(w){
+    const errors=[], focus=[];
+    const name=w.querySelector('.customer-name');
+    const loc=w.querySelector('.location');
+    const pharm=w.querySelector('.pharm');
+    const qtys=[...w.querySelectorAll('.qty')];
+    const ns=w.querySelector('.nostock');
+    const photo=w.querySelector('.photo');
+    const hasSavedPhoto=!!w.dataset.attachment;
+    const nameVal=(name?.value||'').trim();
+    const areaVal=(loc?.value||'').trim();
+    const pharmVal=(pharm?.value||'').trim();
+    if(!nameVal){errors.push('Pharmacy / Customer name is required');focus.push(name)}
+    if(!areaVal){errors.push('Area is required');focus.push(loc)}
+    if(!pharmVal){errors.push('Pharmacist is required');focus.push(pharm)}
+    else if(!/^[A-Za-z][A-Za-z .\'-]{1,99}$/.test(pharmVal)){errors.push('Pharmacist name is invalid');focus.push(pharm)}
+    let positive=0, badQty=false;
+    qtys.forEach(q=>{const raw=(q.value||'').trim(); if(raw!=='' && !/^\\d+$/.test(raw)){badQty=true;focus.push(q)} const n=raw===''?0:Number(raw); if(Number.isFinite(n)&&n>0)positive+=n;});
+    if(badQty)errors.push('Quantity must be a whole number of 0 or more');
+    const noStock=!!ns?.checked;
+    if(positive<=0 && !noStock){errors.push('Enter at least one positive quantity or select No Stock');focus.push(qtys[0],ns)}
+    if(noStock && positive>0){errors.push('No Stock cannot be selected when a positive quantity is entered');focus.push(ns)}
+    if(!hasSavedPhoto && !(photo?.files?.length)){errors.push('Photo is required');focus.push(photo)}
+    return {errors,focus};
+  }
+  function refresh(w){
+    if(!w || w.dataset.validationAttempted!=='1' || w.dataset.saving==='1') return;
+    const m=w.querySelector('.msg');
+    if(!m)return;
+    const r=errorsFor(w);
+    if(r.errors.length){
+      m.textContent='Please complete the following before saving:\n'+r.errors.map(x=>'• '+x).join('\n');
+      m.className='small err';
+    }else{
+      m.textContent='';
+      m.className='small';
+    }
+    const b=w.querySelector('.save');
+    if(b){b.disabled=false;b.removeAttribute('disabled');b.removeAttribute('aria-busy');}
+  }
+  document.addEventListener('click',function(e){
+    const b=e.target.closest('.customer .save');
+    if(!b)return;
+    const w=b.closest('.customer');
+    if(w)w.dataset.validationAttempted='1';
+  },true);
+  document.addEventListener('input',function(e){
+    const w=e.target.closest('.customer');
+    if(w){ if(w.dataset.validationAttempted==='1') refresh(w); }
+  },true);
+  document.addEventListener('change',function(e){
+    const w=e.target.closest('.customer');
+    if(w){ if(w.dataset.validationAttempted==='1') refresh(w); }
+  },true);
+  document.addEventListener('click',function(e){
+    const w=e.target.closest('.customer');
+    if(w && e.target.closest('.save')) setTimeout(()=>refresh(w),0);
+  });
+})();
+'''
+          # Make this idempotent.
+          s=re.sub(r'\n/\* Definitive validation retry controller \*/.*?\n\(function\(\)\{.*?\n\}\)\(\);\n', '', s, count=1, flags=re.S)
+          if marker not in s:
+              raise SystemExit('No closing script tag found')
+          s=s.replace(marker, patch+'\n'+marker, 1)
+          p.write_text(s,encoding='utf-8')
+
+      - name: Commit patched portal
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html
+          if git diff --cached --quiet; then echo 'No changes required'; exit 0; fi
+          git commit -m 'Apply definitive live validation retry fix'
+          git push
