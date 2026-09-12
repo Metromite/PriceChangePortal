@@ -52,6 +52,10 @@ jobs:
           w.querySelectorAll('.customer-name,.location,.pharm,.photo,.tel,.notes,.qty,.nostock').forEach(el=>{el.addEventListener('input',()=>{w.querySelector('.save').disabled=false;hideSaving();refreshValidation()});el.addEventListener('change',()=>{w.querySelector('.save').disabled=false;hideSaving();refreshValidation()})});'''
           if old in s:
               s = s.replace(old, new, 1)
+          old_loc = "loc.addEventListener('change',()=>{loc.dataset.selectedArea=loc.value;clearValidation()});"
+          new_loc = "loc.addEventListener('change',()=>{loc.dataset.selectedArea=loc.value;refreshValidation()});"
+          if old_loc in s:
+              s = s.replace(old_loc, new_loc, 1)
           marker = "if(w.dataset.saving==='1')return;"
           replacement = "if(w.dataset.saving==='1')return;\n  w.dataset.validationAttempted='1';"
           if replacement not in s and marker in s:
@@ -64,5 +68,5 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add index.html
-          git commit -m 'Fix validation retry to show only remaining missing fields'
+          git commit -m 'Fix validation retry and area change behavior'
           git push
