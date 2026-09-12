@@ -1,0 +1,38 @@
+name: Repair save retry and header UI
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  repair:
+    if: github.event.head_commit.message != 'Repair save retry and header UI'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('index.html')
+          s=p.read_text(encoding='utf-8')
+          # Header controls on the right.
+          s=s.replace('.top-actions{order:-1;align-items:center}', '.top-actions{order:0;align-items:center;justify-content:flex-end}')
+          # Keep only the intended Items spacing rule.
+          import re
+          s=re.sub(r'\.items\{margin-top:24px\}(?:\.items\{margin-top:24px\})+', '.items{margin-top:24px}', s)
+          # Robustly re-arm Save whenever ANY editable value is changed after validation.
+          marker="async function load(){"
+          guard="""document.addEventListener('input',e=>{const w=e.target.closest('.customer');if(!w)return;const b=w.querySelector('.save');if(b)b.disabled=false;const m=w.querySelector('.msg');if(m&&m.classList.contains('err')){m.textContent='';m.className='small';}});document.addEventListener('change',e=>{const w=e.target.closest('.customer');if(!w)return;const b=w.querySelector('.save');if(b)b.disabled=false;const m=w.querySelector('.msg');if(m&&m.classList.contains('err')){m.textContent='';m.className='small';}});\n"""
+          if guard not in s:
+              s=s.replace(marker,guard+marker,1)
+          # Prevent a stale disabled state from ever surviving a failed validation/save attempt.
+          s=s.replace("const fail=(text,focusEl)=>{hideSaving();saveBtn.disabled=false;setmsg(m,text,false);", "const fail=(text,focusEl)=>{hideSaving();saveBtn.disabled=false;setmsg(m,text,false);")
+          p.write_text(s,encoding='utf-8')
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html
+          git commit -m 'Repair save retry and header UI'
+          git push
