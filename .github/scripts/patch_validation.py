@@ -4,12 +4,18 @@ import re
 p = Path('index.html')
 s = p.read_text(encoding='utf-8')
 
-MARKER = '/* Price Portal validation retry controller */'
-
-# Remove ONLY our previously injected controller. Do not modify the existing
-# login code, saveVisit code, or any original field handlers.
+# Remove every controller from the earlier attempts, including copies that
+# were accidentally duplicated and copies containing a literal backslash-n.
 s = re.sub(
-    r'\s*/\* Price Portal validation retry controller \*/.*?\n\}\)\(\);\s*',
+    r'(?:\\n|\n)\s*/\* Definitive validation retry controller(?: - final)? \*/.*?\n\}\)\(\);',
+    '\n',
+    s,
+    flags=re.S,
+)
+
+# Remove our current isolated controller before rebuilding exactly one copy.
+s = re.sub(
+    r'(?:\\n|\n)\s*/\* Price Portal validation retry controller \*/.*?\n\}\)\(\);',
     '\n',
     s,
     flags=re.S,
@@ -93,4 +99,4 @@ if '</script>' not in s:
     raise SystemExit('index.html has no closing script tag')
 s = s.replace('</script>', patch + '\n</script>', 1)
 p.write_text(s, encoding='utf-8')
-print('SAFE validation controller patched')
+print('LEGACY controllers removed; one safe controller installed')
