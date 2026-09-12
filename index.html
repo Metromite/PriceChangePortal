@@ -166,7 +166,8 @@ async function saveVisit(c,a,w){
 function buildList(){const root=$('#list');if(!root||!data)return;const vs=(data.campaigns||[]).flatMap(c=>(c.visits||[]).map(v=>({...v,c})));root.innerHTML='<div class="eyebrow">My submitted visits</div>';if(!vs.length){root.innerHTML+='<p class="muted small">No submissions yet.</p>';return}for(const v of vs){const e=document.createElement('div');e.className='submission';e.innerHTML='<strong>'+esc(v.customer_name||'Unnamed customer')+'</strong><div class="small muted">'+esc(v.location||'')+' · '+esc(v.status||'SUBMITTED')+'</div><div class="small muted">'+(v.visited_at?new Date(v.visited_at).toLocaleString():'')+'</div><button class="btn menuitem">Edit this visit</button>';e.querySelector('button').onclick=()=>{editingVisitId=v.id;closeMenu();render(data.campaigns||[]);requestAnimationFrame(()=>{const t=document.querySelector('[data-visit-id="'+CSS.escape(v.id)+'"]');if(t){t.scrollIntoView({behavior:'smooth',block:'center'});t.style.outline='2px solid #2563eb';setTimeout(()=>t.style.outline='',1400)}})};root.appendChild(e)}}
 $('#menuBtn').onclick=openMenu;$('#close').onclick=closeMenu;$('#backdrop').onclick=closeMenu;$('#new').onclick=()=>{editingVisitId=null;closeMenu();render(data.campaigns||[]);requestAnimationFrame(()=>document.querySelector('.customer')?.scrollIntoView({behavior:'smooth'}))};$('#refresh').onclick=()=>load();$('#loginBtn').onclick=async()=>{try{const username=$('#u').value.trim().toLowerCase(),password=$('#p').value.toLowerCase();if(!username||!password)throw Error('Enter username and password');const x=await api('/rest/v1/rpc/dispatchops_driver_login',{p_username:username,p_password:password});token=x.token;sessionStorage.setItem(TOKEN,token);if($('#remember').checked)localStorage.setItem(CREDS,JSON.stringify({username,password}));else localStorage.removeItem(CREDS);await load()}catch(e){setmsg($('#loginMsg'),e.message)}};$('#logout').onclick=()=>{sessionStorage.removeItem(TOKEN);location.reload()};try{const c=JSON.parse(localStorage.getItem(CREDS)||'null');if(c?.username){$('#u').value=c.username;$('#p').value=c.password||'';$('#remember').checked=true}}catch{}if(token)load();
 
-/* Definitive validation retry controller */
+
+/* Definitive validation retry controller - final */
 (function(){
   function getErrors(w){
     const errors=[];
@@ -176,36 +177,78 @@ $('#menuBtn').onclick=openMenu;$('#close').onclick=closeMenu;$('#backdrop').oncl
     const qtys=[...w.querySelectorAll('.qty')];
     const ns=w.querySelector('.nostock');
     const photo=w.querySelector('.photo');
+
     if(!(name?.value||'').trim()) errors.push('Pharmacy / Customer name is required');
     if(!(loc?.value||'').trim()) errors.push('Area is required');
+
     const pv=(pharm?.value||'').trim();
     if(!pv) errors.push('Pharmacist is required');
     else if(!/^[A-Za-z][A-Za-z .\'-]{1,99}$/.test(pv)) errors.push('Pharmacist name is invalid');
-    let positive=0,bad=false;
-    qtys.forEach(q=>{const raw=(q.value||'').trim();if(raw!==''&&!/^\d+$/.test(raw))bad=true;const n=raw===''?0:Number(raw);if(Number.isFinite(n)&&n>0)positive+=n;});
+
+    let positive=0, bad=false;
+    qtys.forEach(q=>{
+      const raw=(q.value||'').trim();
+      if(raw!==''&&!/^\d+$/.test(raw)) bad=true;
+      const n=raw===''?0:Number(raw);
+      if(Number.isFinite(n)&&n>0) positive+=n;
+    });
     if(bad) errors.push('Quantity must be a whole number of 0 or more');
+
     const noStock=!!ns?.checked;
     if(positive<=0&&!noStock) errors.push('Enter at least one positive quantity or select No Stock');
     if(noStock&&positive>0) errors.push('No Stock cannot be selected when a positive quantity is entered');
+
     if(!w.dataset.attachment && !(photo?.files?.length)) errors.push('Photo is required');
     return errors;
   }
+
   function refresh(w){
     if(!w || w.dataset.validationAttempted!=='1' || w.dataset.saving==='1') return;
-    const m=w.querySelector('.msg'); if(!m) return;
+    const m=w.querySelector('.msg');
+    if(!m) return;
     const errors=getErrors(w);
-    m.textContent=errors.length?'Please complete the following before saving:\n'+errors.map(x=>'• '+x).join('\n'):'';
-    m.className=errors.length?'small err':'small';
+    m.textContent=errors.length
+      ? 'Please complete the following before saving:\n'+errors.map(x=>'• '+x).join('\n')
+      : '';
+    m.className=errors.length?'msg small err':'msg small';
+
     const b=w.querySelector('.save');
-    if(b){b.disabled=false;b.removeAttribute('disabled');b.removeAttribute('aria-busy');}
+    if(b){
+      b.disabled=false;
+      b.removeAttribute('disabled');
+      b.removeAttribute('aria-busy');
+    }
   }
+
+  // Mark the row as being in validation-retry mode before saveVisit runs.
   document.addEventListener('click',function(e){
     const b=e.target.closest('.customer .save');
-    if(b){const w=b.closest('.customer');if(w)w.dataset.validationAttempted='1';}
+    if(b){
+      const w=b.closest('.customer');
+      if(w) w.dataset.validationAttempted='1';
+    }
   },true);
-  document.addEventListener('input',function(e){const w=e.target.closest('.customer');if(w&&w.dataset.validationAttempted==='1')refresh(w);},true);
-  document.addEventListener('change',function(e){const w=e.target.closest('.customer');if(w&&w.dataset.validationAttempted==='1')refresh(w);},true);
-  document.addEventListener('click',function(e){const w=e.target.closest('.customer');if(w&&e.target.closest('.save'))setTimeout(function(){refresh(w)},0);});
+
+  // Capture phase gives immediate feedback. The delayed bubble-phase refresh
+  // runs LAST, so any older row-specific handler cannot erase the message.
+  function scheduleRefresh(e){
+    const w=e.target.closest('.customer');
+    if(w&&w.dataset.validationAttempted==='1') setTimeout(()=>refresh(w),0);
+  }
+  document.addEventListener('input',scheduleRefresh,true);
+  document.addEventListener('change',scheduleRefresh,true);
+  document.addEventListener('input',scheduleRefresh,false);
+  document.addEventListener('change',scheduleRefresh,false);
+
+  // Recalculate after saveVisit's own validation has completed.
+  document.addEventListener('click',function(e){
+    const w=e.target.closest('.customer');
+    if(w&&e.target.closest('.save')) setTimeout(()=>refresh(w),0);
+  },false);
+
+  // Expose a harmless debug hook so the page always has one authoritative
+  // validation recalculation function.
+  window.__refreshPriceChangeValidation=refresh;
 })();
 
 </script>
