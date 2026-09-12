@@ -63,4 +63,50 @@ try{
 }
 function buildList(){const root=$('#list');if(!root||!data)return;const vs=(data.campaigns||[]).flatMap(c=>(c.visits||[]).map(v=>({...v,c})));root.innerHTML='<div class="eyebrow">My submitted visits</div>';if(!vs.length){root.innerHTML+='<p class="muted small">No submissions yet.</p>';return}for(const v of vs){const e=document.createElement('div');e.className='submission';e.innerHTML='<strong>'+esc(v.customer_name||'Unnamed customer')+'</strong><div class="small muted">'+esc(v.location||'')+' · '+esc(v.status||'SUBMITTED')+'</div><div class="small muted">'+(v.visited_at?new Date(v.visited_at).toLocaleString():'')+'</div><button class="btn menuitem">Edit this visit</button>';e.querySelector('button').onclick=()=>{editingVisitId=v.id;closeMenu();render(data.campaigns||[]);requestAnimationFrame(()=>{const t=document.querySelector('[data-visit-id="'+CSS.escape(v.id)+'"]');if(t){t.scrollIntoView({behavior:'smooth',block:'center'});t.style.outline='2px solid #2563eb';setTimeout(()=>t.style.outline='',1400)}})};root.appendChild(e)}}
 $('#menuBtn').onclick=openMenu;$('#close').onclick=closeMenu;$('#backdrop').onclick=closeMenu;$('#new').onclick=()=>{editingVisitId=null;closeMenu();render(data.campaigns||[]);requestAnimationFrame(()=>document.querySelector('.customer')?.scrollIntoView({behavior:'smooth'}))};$('#refresh').onclick=()=>load();$('#loginBtn').onclick=async()=>{try{const username=$('#u').value.trim().toLowerCase(),password=$('#p').value.toLowerCase();if(!username||!password)throw Error('Enter username and password');const x=await api('/rest/v1/rpc/dispatchops_driver_login',{p_username:username,p_password:password});token=x.token;sessionStorage.setItem(TOKEN,token);if($('#remember').checked)localStorage.setItem(CREDS,JSON.stringify({username,password}));else localStorage.removeItem(CREDS);await load()}catch(e){setmsg($('#loginMsg'),e.message)}};$('#logout').onclick=()=>{sessionStorage.removeItem(TOKEN);location.reload()};try{const c=JSON.parse(localStorage.getItem(CREDS)||'null');if(c?.username){$('#u').value=c.username;$('#p').value=c.password||'';$('#remember').checked=true}}catch{}if(token)load();
-</script></body></html>
+</script><style>
+.field label .req-note,.field label .opt-note,.evidence label .req-note,.evidence label .opt-note{font-size:10px;font-weight:700;letter-spacing:.2px;color:#64748b;margin-left:6px;text-transform:uppercase}
+</style>
+<script>
+(()=>{
+  const isEditable=e=>e && e.matches('input,select,textarea') && !e.disabled;
+  const rearm=el=>{
+    const w=el?.closest?.('.customer'); if(!w)return;
+    const b=w.querySelector('.save');
+    if(b){ b.disabled=false; b.removeAttribute('disabled'); }
+    const m=w.querySelector('.msg');
+    if(m && m.classList.contains('err')){m.textContent='';m.className='small';}
+  };
+  document.addEventListener('input',e=>{if(isEditable(e.target)) rearm(e.target)},true);
+  document.addEventListener('change',e=>{if(isEditable(e.target)) rearm(e.target)},true);
+  document.addEventListener('click',e=>{
+    const b=e.target.closest?.('.save');
+    if(b && b.disabled){ b.disabled=false; b.removeAttribute('disabled'); }
+  },true);
+  new MutationObserver(muts=>{
+    for(const m of muts){
+      if(m.type==='attributes' && m.attributeName==='disabled'){
+        const b=m.target;
+        if(b.matches?.('.save')){
+          const w=b.closest('.customer');
+          if(w && w.querySelector('input:not([type=file]),select,textarea')){
+            // Keep Save available after validation; the save handler itself remains authoritative.
+            b.disabled=false; b.removeAttribute('disabled');
+          }
+        }
+      }
+    }
+  }).observe(document.body,{subtree:true,attributes:true,attributeFilter:['disabled']});
+  const labelFields=()=>document.querySelectorAll('.customer .field label,.customer .evidence label').forEach(l=>{
+    if(l.querySelector('.req-note,.opt-note'))return;
+    const text=l.textContent.trim();
+    const note=document.createElement('span');
+    const required=/\*/.test(text);
+    note.className=required?'req-note':'opt-note';
+    note.textContent=required?'Required':'Optional';
+    l.appendChild(note);
+  });
+  labelFields();
+  new MutationObserver(labelFields).observe(document.body,{subtree:true,childList:true});
+})();
+</script>
+</body></html>
