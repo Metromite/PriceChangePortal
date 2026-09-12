@@ -4,30 +4,20 @@ import re
 p = Path('index.html')
 s = p.read_text(encoding='utf-8')
 
-# Remove the old document-level handlers which clear validation messages.
-s = re.sub(
-    r"document\.addEventListener\('input',e=>\{const w=e\.target\.closest\('\.customer'\);.*?\}\);document\.addEventListener\('change',e=>\{const w=e\.target\.closest\('\.customer'\);.*?\}\);",
-    '', s, count=1, flags=re.S)
+MARKER = '/* Price Portal validation retry controller */'
 
-# The Area select previously called clearValidation() after our validation
-# controller ran. Keep the selected-area bookkeeping, but never erase the
-# current validation state here.
+# Remove ONLY our previously injected controller. Do not modify the existing
+# login code, saveVisit code, or any original field handlers.
 s = re.sub(
-    r"loc\.addEventListener\('change',\(\)=>\{loc\.dataset\.selectedArea=loc\.value;clearValidation\(\)\}\);",
-    "loc.addEventListener('change',()=>{loc.dataset.selectedArea=loc.value});",
-    s, count=1
+    r'\s*/\* Price Portal validation retry controller \*/.*?\n\}\)\(\);\s*',
+    '\n',
+    s,
+    flags=re.S,
 )
 
-# Remove any previous copy of the controller.
-s = re.sub(
-    r"\n/\* Definitive validation retry controller \*/.*?\n\}\)\(\);\n",
-    '', s, count=1, flags=re.S
-)
-
-patch = r'''
-/* Definitive validation retry controller - final */
+patch = r'''/* Price Portal validation retry controller */
 (function(){
-  function getErrors(w){
+  function errorsFor(w){
     const errors=[];
     const name=w.querySelector('.customer-name');
     const loc=w.querySelector('.location');
@@ -39,22 +29,23 @@ patch = r'''
     if(!(name?.value||'').trim()) errors.push('Pharmacy / Customer name is required');
     if(!(loc?.value||'').trim()) errors.push('Area is required');
 
-    const pv=(pharm?.value||'').trim();
-    if(!pv) errors.push('Pharmacist is required');
-    else if(!/^[A-Za-z][A-Za-z .\'-]{1,99}$/.test(pv)) errors.push('Pharmacist name is invalid');
+    const pharmacist=(pharm?.value||'').trim();
+    if(!pharmacist) errors.push('Pharmacist is required');
+    else if(!/^[A-Za-z][A-Za-z .\'-]{1,99}$/.test(pharmacist)) errors.push('Pharmacist name is invalid');
 
-    let positive=0, bad=false;
+    let positive=0;
+    let invalidQty=false;
     qtys.forEach(q=>{
       const raw=(q.value||'').trim();
-      if(raw!==''&&!/^\d+$/.test(raw)) bad=true;
-      const n=raw===''?0:Number(raw);
-      if(Number.isFinite(n)&&n>0) positive+=n;
+      if(raw!=='' && !/^\d+$/.test(raw)) invalidQty=true;
+      const n=raw==='' ? 0 : Number(raw);
+      if(Number.isFinite(n) && n>0) positive+=n;
     });
-    if(bad) errors.push('Quantity must be a whole number of 0 or more');
+    if(invalidQty) errors.push('Quantity must be a whole number of 0 or more');
 
     const noStock=!!ns?.checked;
-    if(positive<=0&&!noStock) errors.push('Enter at least one positive quantity or select No Stock');
-    if(noStock&&positive>0) errors.push('No Stock cannot be selected when a positive quantity is entered');
+    if(positive<=0 && !noStock) errors.push('Enter at least one positive quantity or select No Stock');
+    if(noStock && positive>0) errors.push('No Stock cannot be selected when a positive quantity is entered');
 
     if(!w.dataset.attachment && !(photo?.files?.length)) errors.push('Photo is required');
     return errors;
@@ -62,50 +53,38 @@ patch = r'''
 
   function refresh(w){
     if(!w || w.dataset.validationAttempted!=='1' || w.dataset.saving==='1') return;
-    const m=w.querySelector('.msg');
-    if(!m) return;
-    const errors=getErrors(w);
-    m.textContent=errors.length
+    const msg=w.querySelector('.msg');
+    if(!msg) return;
+    const errors=errorsFor(w);
+    msg.textContent=errors.length
       ? 'Please complete the following before saving:\n'+errors.map(x=>'• '+x).join('\n')
       : '';
-    m.className=errors.length?'msg small err':'msg small';
-
-    const b=w.querySelector('.save');
-    if(b){
-      b.disabled=false;
-      b.removeAttribute('disabled');
-      b.removeAttribute('aria-busy');
+    msg.className=errors.length ? 'msg small err' : 'msg small';
+    const save=w.querySelector('.save');
+    if(save){
+      save.disabled=false;
+      save.removeAttribute('disabled');
+      save.removeAttribute('aria-busy');
     }
   }
 
-  // Mark the row as being in validation-retry mode before saveVisit runs.
+  // Capture before the original save handler runs. This does not replace it.
   document.addEventListener('click',function(e){
-    const b=e.target.closest('.customer .save');
-    if(b){
-      const w=b.closest('.customer');
+    const save=e.target.closest('.customer .save');
+    if(save){
+      const w=save.closest('.customer');
       if(w) w.dataset.validationAttempted='1';
+      setTimeout(function(){ if(w) refresh(w); },0);
     }
   },true);
 
-  // Capture phase gives immediate feedback. The delayed bubble-phase refresh
-  // runs LAST, so any older row-specific handler cannot erase the message.
-  function scheduleRefresh(e){
+  function changed(e){
     const w=e.target.closest('.customer');
-    if(w&&w.dataset.validationAttempted==='1') setTimeout(()=>refresh(w),0);
+    if(w && w.dataset.validationAttempted==='1') setTimeout(function(){refresh(w)},0);
   }
-  document.addEventListener('input',scheduleRefresh,true);
-  document.addEventListener('change',scheduleRefresh,true);
-  document.addEventListener('input',scheduleRefresh,false);
-  document.addEventListener('change',scheduleRefresh,false);
+  document.addEventListener('input',changed,true);
+  document.addEventListener('change',changed,true);
 
-  // Recalculate after saveVisit's own validation has completed.
-  document.addEventListener('click',function(e){
-    const w=e.target.closest('.customer');
-    if(w&&e.target.closest('.save')) setTimeout(()=>refresh(w),0);
-  },false);
-
-  // Expose a harmless debug hook so the page always has one authoritative
-  // validation recalculation function.
   window.__refreshPriceChangeValidation=refresh;
 })();
 '''
@@ -114,4 +93,4 @@ if '</script>' not in s:
     raise SystemExit('index.html has no closing script tag')
 s = s.replace('</script>', patch + '\n</script>', 1)
 p.write_text(s, encoding='utf-8')
-print('FINAL validation controller patched')
+print('SAFE validation controller patched')
