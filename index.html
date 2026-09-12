@@ -189,7 +189,7 @@ html.menu-open{overflow:hidden}
     if(!name) errors.push('Pharmacy / Customer name is required.');
     if(!area) errors.push('Area is required. Please select an area.');
     if(!pharm) errors.push('Pharmacist name is required.');
-    else if(!/^[A-Za-zÀ-ÖØ-öø-ÿ\\s.'-]+$/.test(pharm)) errors.push('Pharmacist name can contain letters, spaces, apostrophes, dots and hyphens only.');
+    else if(!/^[A-Za-zÀ-ÖØ-öø-ÿ\s.'-]+$/.test(pharm)) errors.push('Pharmacist name can contain letters, spaces, apostrophes, dots and hyphens only.');
     if(vals.some(v=>!Number.isInteger(v)||v<0)) errors.push('Quantities must be whole numbers 0 or greater.');
     const positive=vals.some(v=>Number.isInteger(v)&&v>0);
     if(!positive && !noStock) errors.push('Enter a quantity for at least one item, or select No Stock.');
