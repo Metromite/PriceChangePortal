@@ -20,16 +20,23 @@ jobs:
       - name: Apply final validation fix
         run: python3 .github/scripts/patch_validation.py
 
-      - name: Verify fix is present
+      - name: Verify fix is isolated
         run: |
-          grep -q 'Definitive validation retry controller - final' index.html
-          if grep -q 'clearValidation();' index.html; then
-            echo 'ERROR: legacy clearValidation() call still present'
+          test "$(grep -o 'Price Portal validation retry controller' index.html | wc -l)" -eq 1
+          if grep -q 'Definitive validation retry controller - final' index.html; then
+            echo 'ERROR: legacy definitive controller is still present'
+            exit 1
+          fi
+          if grep -q '\\n/\* Definitive validation retry controller' index.html; then
+            echo 'ERROR: malformed legacy controller is still present'
             exit 1
           fi
           grep -q 'window.__refreshPriceChangeValidation' index.html
-          grep -q "addEventListener('input',scheduleRefresh,false)" index.html
-          grep -q "addEventListener('change',scheduleRefresh,false)" index.html
+          grep -q "addEventListener('input',changed,true)" index.html
+          grep -q "addEventListener('change',changed,true)" index.html
+          grep -q "id=\"loginBtn\"" index.html
+          grep -q "dispatchops_driver_login" index.html
+          echo 'Validation controller is isolated; login code is present.'
 
       - name: Package corrected index.html
         run: |
