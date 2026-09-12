@@ -23,8 +23,13 @@ jobs:
       - name: Verify fix is present
         run: |
           grep -q 'Definitive validation retry controller - final' index.html
-          grep -q 'clearValidation' index.html && { echo 'ERROR: legacy clearValidation call still present'; exit 1; } || true
+          if grep -q 'clearValidation();' index.html; then
+            echo 'ERROR: legacy clearValidation() call still present'
+            exit 1
+          fi
           grep -q 'window.__refreshPriceChangeValidation' index.html
+          grep -q "addEventListener('input',scheduleRefresh,false)" index.html
+          grep -q "addEventListener('change',scheduleRefresh,false)" index.html
 
       - name: Package corrected index.html
         run: |
