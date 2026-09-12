@@ -1,15 +1,14 @@
-name: Build corrected Price Change Portal file
+name: Verify Price Change Portal
 
 on:
   workflow_dispatch:
   push:
     paths:
-      - '.github/scripts/patch_validation.py'
       - 'index.html'
       - '.github/workflows/build-corrected-index.yml'
 
 jobs:
-  build:
+  verify:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -17,37 +16,29 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Apply final validation fix
-        run: python3 .github/scripts/patch_validation.py
-
-      - name: Verify fix is isolated
+      - name: Verify portal
         run: |
-          test "$(grep -o 'Price Portal validation retry controller' index.html | wc -l)" -eq 1
-          if grep -q 'Definitive validation retry controller - final' index.html; then
-            echo 'ERROR: legacy definitive controller is still present'
+          test -f index.html
+          grep -q 'id="loginBtn"' index.html
+          grep -q 'dispatchops_driver_login' index.html
+          if grep -q 'Price Portal validation retry controller' index.html; then
+            echo 'ERROR: legacy validation controller is present'
             exit 1
           fi
-          if grep -q '\\n/\* Definitive validation retry controller' index.html; then
-            echo 'ERROR: malformed legacy controller is still present'
-            exit 1
-          fi
-          grep -q 'window.__refreshPriceChangeValidation' index.html
-          grep -q "addEventListener('input',changed,true)" index.html
-          grep -q "addEventListener('change',changed,true)" index.html
-          grep -q "id=\"loginBtn\"" index.html
-          grep -q "dispatchops_driver_login" index.html
-          echo 'Validation controller is isolated; login code is present.'
+          grep -q 'async function saveVisit' index.html
+          grep -q 'Please complete the following before saving' index.html
+          echo 'Portal verification passed: login preserved and validation is handled by saveVisit.'
 
-      - name: Package corrected index.html
+      - name: Package portal
         run: |
-          mkdir -p corrected-price-change-portal
-          cp index.html corrected-price-change-portal/index.html
-          cd corrected-price-change-portal
-          zip -9 ../PriceChangePortal-corrected-index.zip index.html
+          mkdir -p price-change-portal
+          cp index.html price-change-portal/index.html
+          cd price-change-portal
+          zip -9 ../PriceChangePortal-index.zip index.html
 
-      - name: Upload corrected file
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: PriceChangePortal-corrected-index
-          path: PriceChangePortal-corrected-index.zip
+          name: PriceChangePortal-index
+          path: PriceChangePortal-index.zip
           retention-days: 7
