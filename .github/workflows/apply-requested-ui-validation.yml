@@ -1,0 +1,44 @@
+name: Apply requested portal UI and validation fix
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  fix:
+    if: github.event.head_commit.message != 'Apply requested portal UI and validation fix'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch index.html
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('index.html')
+          s=p.read_text(encoding='utf-8')
+          old='''<div class="items"><div class="small muted" style="font-weight:800;text-transform:uppercase;letter-spacing:.9px;margin-bottom:2px">Items</div></div>'''
+          new='''<div class="items"><div class="qty-label" style="text-align:left;margin-bottom:6px">Items</div></div>'''
+          if old not in s: raise SystemExit('Items header pattern not found')
+          s=s.replace(old,new,1)
+          old='''r.innerHTML='<div><div class="small muted" style="font-weight:800;text-transform:uppercase;letter-spacing:.7px;margin-bottom:4px">'+esc(i.line_no)+'</div><strong>'+esc(i.item_description)+'</strong><div class="muted small">New Price: '+esc(i.new_public_price??i.new_pharmacy_price??'—')+'</div></div><div><div class="qty-label">Quantity</div>'''
+          new='''r.innerHTML='<div><strong>'+esc(i.line_no)+'. '+esc(i.item_description)+'</strong><div class="muted small">New Price: '+esc(i.new_public_price??i.new_pharmacy_price??'—')+'</div></div><div><div class="qty-label">Quantity</div>'''
+          if old not in s: raise SystemExit('Item row pattern not found')
+          s=s.replace(old,new,1)
+          marker="const tel=w.querySelector('.tel');tel.addEventListener('input',()=>{tel.value=tel.value.replace(/[^0-9]/g,'')});"
+          repl="const clearValidation=()=>{const m=w.querySelector('.msg');if(m.classList.contains('err')){m.textContent='';m.className='msg small'}};w.querySelectorAll('.customer-name,.location,.pharm,.photo,.tel,.notes,.qty,.nostock').forEach(el=>{el.addEventListener('input',clearValidation);el.addEventListener('change',clearValidation)});"+marker
+          if marker not in s: raise SystemExit('Validation listener marker not found')
+          s=s.replace(marker,repl,1)
+          start=s.index('async function saveVisit(c,a,w){')
+          end=s.index('\n function buildList()',start)
+          fn='''async function saveVisit(c,a,w){const m=w.querySelector('.msg'),saveBtn=w.querySelector('.save');const name=w.querySelector('.customer-name').value.trim(),locEl=w.querySelector('.location'),loc=String(locEl?.selectedOptions?.[0]?.value||locEl?.value||'').trim(),ph=w.querySelector('.pharm').value.trim(),ns=w.querySelector('.nostock').checked;const qs=[...w.querySelectorAll('.qty')],vals=qs.map(x=>x.value.trim()===''?0:Number(x.value));setmsg(m,'',true);if(!name)return setmsg(m,'Customer name is required.');if(!loc)return setmsg(m,'Please select an area before saving.');if(!ph)return setmsg(m,'Pharmacist name is required.');if(!/^[A-Za-zÀ-ÖØ-öø-ÿ\\s.'-]+$/.test(ph))return setmsg(m,'Pharmacist name can contain letters, spaces, apostrophes, dots and hyphens only.');if(vals.some(x=>!Number.isInteger(x)||x<0))return setmsg(m,'Quantities must be whole numbers 0 or greater.');if(!ns&&!vals.some(x=>x>0))return setmsg(m,'Enter a quantity or select No Stock.');if(ns&&vals.some(x=>x>0))return setmsg(m,'No Stock cannot be selected with a quantity.');try{saveBtn.disabled=true;showSaving();let photo=w.querySelector('.photo').files[0],path=w.dataset.attachment||null;if(photo)path=await upload(await compress(photo),photo.name,photo.type,'photo');else if(!path)throw Error('A pharmacy/place photo is required before saving.');let sp=w.dataset.signature||null;if(w.dataset.newSignature)sp=await upload(w.dataset.newSignature,'signature.png','image/png','signature');const items=qs.map(x=>({item_id:x.dataset.item,quantity:Number(x.value||0)}));const r=await api('/rest/v1/rpc/dispatchops_driver_save_visit',{p_token:token,p_visit:{id:w.dataset.visitId||null,assignment_id:a.id,campaign_id:c.campaign.id,customer_name:name,location:loc,telephone:w.querySelector('.tel').value.trim(),pharmacist_name:ph,notes:w.querySelector('.notes').value.trim(),attachment_path:path,signature_path:sp,status:ns?'NO_STOCK':'SUBMITTED',items}});w.dataset.visitId=r.visit_id;w.dataset.attachment=path||'';w.dataset.signature=sp||'';delete w.dataset.newSignature;hideSaving();toast('Visit saved successfully');editingVisitId=null;await load();requestAnimationFrame(()=>document.querySelector('.customer')?.scrollIntoView({behavior:'smooth',block:'center'}))}catch(e){hideSaving();setmsg(m,e.message||'Could not save')}finally{saveBtn.disabled=false}}'''
+          s=s[:start]+fn+s[end:]
+          p.write_text(s,encoding='utf-8')
+          PY
+      - name: Commit and remove workflow
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html
+          git rm .github/workflows/apply-requested-ui-validation.yml
+          git commit -m 'Apply requested portal UI and validation fix'
+          git push
