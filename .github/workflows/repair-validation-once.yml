@@ -1,0 +1,96 @@
+name: Repair portal validation once
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  repair:
+    if: github.actor == 'Metromite'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install validation guard
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          p=Path('index.html')
+          s=p.read_text(encoding='utf-8')
+          marker='/* PRICE PORTAL VALIDATION GUARD v2 */'
+          # Remove any previous copy of this guard.
+          s=re.sub(r'\n<script>\s*/\* PRICE PORTAL VALIDATION GUARD v2 \*/.*?</script>', '', s, flags=re.S)
+          guard=r'''<script>
+          /* PRICE PORTAL VALIDATION GUARD v2 */
+          (function(){
+            function getErrors(w){
+              const errors=[];
+              const name=(w.querySelector('.customer-name')?.value||'').trim();
+              const area=(w.querySelector('.location')?.value||'').trim();
+              const pharm=(w.querySelector('.pharm')?.value||'').trim();
+              const noStock=!!w.querySelector('.nostock')?.checked;
+              const qs=[...w.querySelectorAll('.qty')];
+              const vals=qs.map(q=>{const raw=(q.value||'').trim(); return raw===''?0:Number(raw)});
+              if(!name) errors.push('Pharmacy / Customer name is required.');
+              if(!area) errors.push('Area is required. Please select an area.');
+              if(!pharm) errors.push('Pharmacist name is required.');
+              else if(!/^[A-Za-zÀ-ÖØ-öø-ÿ\\s.'-]+$/.test(pharm)) errors.push('Pharmacist name can contain letters, spaces, apostrophes, dots and hyphens only.');
+              if(vals.some(v=>!Number.isInteger(v)||v<0)) errors.push('Quantities must be whole numbers 0 or greater.');
+              const positive=vals.some(v=>Number.isInteger(v)&&v>0);
+              if(!positive && !noStock) errors.push('Enter a quantity for at least one item, or select No Stock.');
+              if(positive && noStock) errors.push('No Stock cannot be selected with a quantity.');
+              const photo=w.querySelector('.photo');
+              if(!String(w.dataset.attachment||'').trim() && !(photo?.files?.length)) errors.push('Pharmacy / place photo is required.');
+              return errors;
+            }
+            function paint(w){
+              if(!w || w.dataset.validationAttempted!=='1') return;
+              const m=w.querySelector('.msg');
+              if(!m) return;
+              const errors=getErrors(w);
+              if(errors.length){
+                m.textContent='Please complete the following before saving:\n'+errors.map(x=>'• '+x).join('\n');
+                m.className='msg small err';
+              }else{
+                m.textContent='';
+                m.className='msg small';
+              }
+              const b=w.querySelector('.save');
+              if(b){b.disabled=false;b.removeAttribute('disabled');b.removeAttribute('aria-busy');}
+            }
+            document.addEventListener('click',function(e){
+              const b=e.target.closest && e.target.closest('.customer .save');
+              if(!b) return;
+              const w=b.closest('.customer');
+              if(!w) return;
+              w.dataset.validationAttempted='1';
+              const errors=getErrors(w);
+              if(errors.length){
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                paint(w);
+                return;
+              }
+              // Valid: allow the portal's original saveVisit() handler to run unchanged.
+              b.disabled=false;
+            },true);
+            function changed(e){
+              const w=e.target.closest && e.target.closest('.customer');
+              if(w && w.dataset.validationAttempted==='1') requestAnimationFrame(()=>paint(w));
+            }
+            document.addEventListener('input',changed,true);
+            document.addEventListener('change',changed,true);
+          })();
+          </script>'''
+          s=s.replace('</body>',guard+'\n</body>',1)
+          p.write_text(s,encoding='utf-8')
+          PY
+      - name: Commit repaired portal and remove one-time workflow
+        run: |
+          rm -f .github/workflows/repair-validation-once.yml
+          git config user.name 'Metromite'
+          git config user.email 'khaledehab3@gmail.com'
+          git add index.html .github/workflows/repair-validation-once.yml
+          git commit -m 'Fix live validation state and remaining-field updates'
+          git push
