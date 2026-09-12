@@ -240,4 +240,46 @@ $('#menuBtn').onclick=openMenu;$('#close').onclick=closeMenu;$('#backdrop').oncl
   new MutationObserver(bind).observe(document.body,{subtree:true,childList:true});
 })();
 </script>
+<script>
+/* FINAL_DIRECT_SAVE_BINDING */
+(function(){
+  const originalRenderCustomer=window.renderCustomer;
+  if(typeof originalRenderCustomer!=='function')return;
+  window.renderCustomer=function(host,c,a,v){
+    originalRenderCustomer(host,c,a,v);
+    const w=host.lastElementChild;
+    if(w){w.__campaign=c;w.__assignment=a;}
+  };
+  async function directSave(w){
+    const c=w.__campaign,a=w.__assignment,b=w.querySelector('.save'),m=w.querySelector('.msg');
+    if(!c||!a){setmsg(m,'Please refresh assignments and try again.',false);return;}
+    const fail=(t,el)=>{hideSaving();b.disabled=false;b.removeAttribute('disabled');setmsg(m,t,false);if(el)requestAnimationFrame(()=>el.focus());};
+    try{
+      b.disabled=false;b.removeAttribute('disabled');
+      const name=(w.querySelector('.customer-name')?.value||'').trim(),loc=(w.querySelector('.location')?.value||'').trim(),ph=(w.querySelector('.pharm')?.value||'').trim();
+      const ns=!!w.querySelector('.nostock')?.checked,qs=[...w.querySelectorAll('.qty')],vals=qs.map(q=>{const x=q.value.trim();return x===''?0:Number(x)});
+      setmsg(m,'',true);
+      if(!name)return fail('Customer name is required.',w.querySelector('.customer-name'));
+      if(!loc)return fail('Please select an area before saving.',w.querySelector('.location'));
+      if(!ph)return fail('Pharmacist name is required.',w.querySelector('.pharm'));
+      if(!/^[A-Za-zÀ-ÖØ-öø-ÿ\s.'-]+$/.test(ph))return fail('Pharmacist name can contain letters, spaces, apostrophes, dots and hyphens only.',w.querySelector('.pharm'));
+      if(vals.some(x=>!Number.isInteger(x)||x<0))return fail('Quantities must be whole numbers 0 or greater.');
+      if(!ns&&!vals.some(x=>x>0))return fail('Enter a quantity for at least one item, or select No Stock.');
+      if(ns&&vals.some(x=>x>0))return fail('No Stock cannot be selected with a quantity.');
+      b.disabled=true;showSaving();
+      let photo=w.querySelector('.photo')?.files?.[0],path=w.dataset.attachment||null;
+      if(photo)path=await upload(await compress(photo),photo.name,photo.type,'photo');
+      else if(!path)throw Error('A pharmacy/place photo is required before saving.');
+      let sp=w.dataset.signature||null;
+      if(w.dataset.newSignature)sp=await upload(w.dataset.newSignature,'signature.png','image/png','signature');
+      const items=qs.map(q=>({item_id:q.dataset.item,quantity:Number(q.value||0)}));
+      const r=await api('/rest/v1/rpc/dispatchops_driver_save_visit',{p_token:token,p_visit:{id:w.dataset.visitId||null,assignment_id:a.id,campaign_id:c.campaign.id,customer_name:name,location:loc,telephone:w.querySelector('.tel').value.trim(),pharmacist_name:ph,notes:w.querySelector('.notes').value.trim(),attachment_path:path,signature_path:sp,status:ns?'NO_STOCK':'SUBMITTED',items}});
+      w.dataset.visitId=r.visit_id;w.dataset.attachment=path||'';w.dataset.signature=sp||'';delete w.dataset.newSignature;editingVisitId=null;hideSaving();b.disabled=false;b.removeAttribute('disabled');toast('Visit saved successfully');await load();
+    }catch(e){hideSaving();b.disabled=false;b.removeAttribute('disabled');setmsg(m,e.message||'Could not save',false)}
+    finally{hideSaving();b.disabled=false;b.removeAttribute('disabled')}
+  }
+  const bind=()=>document.querySelectorAll('.customer .save').forEach(b=>{const w=b.closest('.customer');if(w?.__campaign&&w?.__assignment){b.onclick=()=>directSave(w);b.disabled=false;b.removeAttribute('disabled');}});
+  const mo=new MutationObserver(bind);mo.observe(document.body,{subtree:true,childList:true});bind();
+})();
+</script>
 </body></html>
