@@ -1,0 +1,38 @@
+name: Apply final portal fix
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  fix:
+    if: github.event.head_commit.message != 'Final portal UI and area save fix'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch portal
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('index.html')
+          s=p.read_text(encoding='utf-8')
+          old='.evidence{display:grid;grid-template-columns:1fr 1fr;gap:12px}'
+          new='.items{margin-top:12px}.evidence{display:grid;grid-template-columns:1fr 1fr;gap:12px}'
+          if old not in s: raise SystemExit('CSS anchor not found')
+          s=s.replace(old,new,1)
+          old="const clearValidation=()=>{const m=w.querySelector('.msg');if(m.classList.contains('err')){m.textContent='';m.className='msg small'}};w.querySelectorAll('.customer-name,.location,.pharm,.photo,.tel,.notes,.qty,.nostock').forEach(el=>{el.addEventListener('input',clearValidation);el.addEventListener('change',clearValidation)});const tel=w.querySelector('.tel');"
+          new="const clearValidation=()=>{const m=w.querySelector('.msg');if(m.classList.contains('err')){m.textContent='';m.className='msg small'}};w.querySelectorAll('.customer-name,.location,.pharm,.photo,.tel,.notes,.qty,.nostock').forEach(el=>{el.addEventListener('input',clearValidation);el.addEventListener('change',clearValidation)});const loc=w.querySelector('.location');loc.dataset.selectedArea=loc.value;loc.addEventListener('change',()=>{loc.dataset.selectedArea=loc.value;clearValidation()});const tel=w.querySelector('.tel');"
+          if old not in s: raise SystemExit('validation anchor not found')
+          s=s.replace(old,new,1)
+          old="loc=String(locEl?.selectedOptions?.[0]?.value||locEl?.value||'').trim()"
+          new="loc=String(locEl?.value||locEl?.dataset?.selectedArea||'').trim()"
+          if old not in s: raise SystemExit('save location expression not found')
+          s=s.replace(old,new,1)
+          p.write_text(s,encoding='utf-8')
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html
+          git rm -f .github/workflows/inspect-portal.yml .github/workflows/final-portal-fix.yml .github/workflows/inspect-save.yml .github/workflows/extract-save.yml _inspect_output.txt _debug-save.txt || true
+          git commit -m 'Final portal UI and area save fix'
+          git push
