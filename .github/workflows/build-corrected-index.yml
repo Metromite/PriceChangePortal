@@ -1,0 +1,41 @@
+name: Build corrected Price Change Portal file
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/scripts/patch_validation.py'
+      - 'index.html'
+      - '.github/workflows/build-corrected-index.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Apply final validation fix
+        run: python3 .github/scripts/patch_validation.py
+
+      - name: Verify fix is present
+        run: |
+          grep -q 'Definitive validation retry controller - final' index.html
+          grep -q 'clearValidation' index.html && { echo 'ERROR: legacy clearValidation call still present'; exit 1; } || true
+          grep -q 'window.__refreshPriceChangeValidation' index.html
+
+      - name: Package corrected index.html
+        run: |
+          mkdir -p corrected-price-change-portal
+          cp index.html corrected-price-change-portal/index.html
+          cd corrected-price-change-portal
+          zip -9 ../PriceChangePortal-corrected-index.zip index.html
+
+      - name: Upload corrected file
+        uses: actions/upload-artifact@v4
+        with:
+          name: PriceChangePortal-corrected-index
+          path: PriceChangePortal-corrected-index.zip
+          retention-days: 7
