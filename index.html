@@ -175,4 +175,66 @@ $('#menuBtn').onclick=openMenu;$('#close').onclick=closeMenu;$('#backdrop').oncl
 body.menu-open{overflow:hidden}
 html.menu-open{overflow:hidden}
 </style>
+<script>
+/* PRICE PORTAL VALIDATION GUARD v2 */
+(function(){
+  function getErrors(w){
+    const errors=[];
+    const name=(w.querySelector('.customer-name')?.value||'').trim();
+    const area=(w.querySelector('.location')?.value||'').trim();
+    const pharm=(w.querySelector('.pharm')?.value||'').trim();
+    const noStock=!!w.querySelector('.nostock')?.checked;
+    const qs=[...w.querySelectorAll('.qty')];
+    const vals=qs.map(q=>{const raw=(q.value||'').trim(); return raw===''?0:Number(raw)});
+    if(!name) errors.push('Pharmacy / Customer name is required.');
+    if(!area) errors.push('Area is required. Please select an area.');
+    if(!pharm) errors.push('Pharmacist name is required.');
+    else if(!/^[A-Za-zÀ-ÖØ-öø-ÿ\\s.'-]+$/.test(pharm)) errors.push('Pharmacist name can contain letters, spaces, apostrophes, dots and hyphens only.');
+    if(vals.some(v=>!Number.isInteger(v)||v<0)) errors.push('Quantities must be whole numbers 0 or greater.');
+    const positive=vals.some(v=>Number.isInteger(v)&&v>0);
+    if(!positive && !noStock) errors.push('Enter a quantity for at least one item, or select No Stock.');
+    if(positive && noStock) errors.push('No Stock cannot be selected with a quantity.');
+    const photo=w.querySelector('.photo');
+    if(!String(w.dataset.attachment||'').trim() && !(photo?.files?.length)) errors.push('Pharmacy / place photo is required.');
+    return errors;
+  }
+  function paint(w){
+    if(!w || w.dataset.validationAttempted!=='1') return;
+    const m=w.querySelector('.msg');
+    if(!m) return;
+    const errors=getErrors(w);
+    if(errors.length){
+      m.textContent='Please complete the following before saving:\n'+errors.map(x=>'• '+x).join('\n');
+      m.className='msg small err';
+    }else{
+      m.textContent='';
+      m.className='msg small';
+    }
+    const b=w.querySelector('.save');
+    if(b){b.disabled=false;b.removeAttribute('disabled');b.removeAttribute('aria-busy');}
+  }
+  document.addEventListener('click',function(e){
+    const b=e.target.closest && e.target.closest('.customer .save');
+    if(!b) return;
+    const w=b.closest('.customer');
+    if(!w) return;
+    w.dataset.validationAttempted='1';
+    const errors=getErrors(w);
+    if(errors.length){
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      paint(w);
+      return;
+    }
+    // Valid: allow the portal's original saveVisit() handler to run unchanged.
+    b.disabled=false;
+  },true);
+  function changed(e){
+    const w=e.target.closest && e.target.closest('.customer');
+    if(w && w.dataset.validationAttempted==='1') requestAnimationFrame(()=>paint(w));
+  }
+  document.addEventListener('input',changed,true);
+  document.addEventListener('change',changed,true);
+})();
+</script>
 </body></html>
