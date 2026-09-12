@@ -1,0 +1,58 @@
+name: Fix quantity validation
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  fix:
+    if: github.event.head_commit.message != 'Fix quantity validation and save retry behavior'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply quantity rule and save retry fix
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('index.html')
+          s=p.read_text(encoding='utf-8')
+          marker='</body>'
+          patch=r'''<style>
+          .field label .req-note,.evidence label .req-note,.field label .opt-note,.evidence label .opt-note{font-size:10px;font-weight:700;letter-spacing:.2px;color:#64748b;margin-left:6px;text-transform:uppercase}
+          .items{margin-top:36px}
+          </style>
+          <script>
+          (()=>{
+            const card=e=>e?.closest?.('.customer');
+            const save=w=>w?.querySelector?.('.save');
+            const msg=w=>w?.querySelector?.('.msg');
+            const rearm=w=>{const b=save(w);if(b){b.disabled=false;b.removeAttribute('disabled');}const m=msg(w);if(m&&m.classList.contains('err')){m.textContent='';m.className='small';}};
+            const qtyState=w=>{
+              const qs=[...w.querySelectorAll('.qty')];
+              const hasQty=qs.some(q=>{const n=parseFloat(String(q.value??'').trim());return Number.isFinite(n)&&n>0;});
+              const ns=[...w.querySelectorAll('.no-stock input[type=checkbox],input[type=checkbox]')].find(x=>x.closest('.no-stock'));
+              return {hasQty,noStock:!!ns?.checked};
+            };
+            document.addEventListener('input',e=>{if(card(e.target))rearm(card(e.target));},true);
+            document.addEventListener('change',e=>{if(card(e.target))rearm(card(e.target));},true);
+            document.addEventListener('click',e=>{const b=e.target.closest?.('.save');if(!b)return;const w=card(b);if(!w)return;const st=qtyState(w);if(!st.hasQty&&!st.noStock){e.preventDefault();e.stopImmediatePropagation();const m=msg(w);if(m)setmsg&&setmsg(m,'Enter a quantity for at least one item, or select No Stock.',false);else{const x=document.createElement('div');x.className='small err msg';x.textContent='Enter a quantity for at least one item, or select No Stock.';b.parentNode.appendChild(x);}b.disabled=false;b.removeAttribute('disabled');return false;}},true);
+            const setLabels=()=>document.querySelectorAll('.customer .field label,.customer .evidence label').forEach(l=>{if(l.querySelector('.req-note,.opt-note'))return;const text=l.textContent.trim();const n=document.createElement('span');const required=/\*/.test(text);n.className=required?'req-note':'opt-note';n.textContent=required?'Required':'Optional';l.appendChild(n);});
+            setLabels();new MutationObserver(setLabels).observe(document.body,{subtree:true,childList:true});
+          })();
+          </script>
+          '''
+          # Replace only the temporary injected patch from the prior fix if present, then install this one.
+          if 'Enter a quantity for at least one item, or select No Stock.' not in s:
+              s=s.replace(marker,patch+marker,1)
+          p.write_text(s,encoding='utf-8')
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html
+          git commit -m 'Fix quantity validation and save retry behavior'
+          git push
+          git rm .github/workflows/fix-quantity-validation.yml
+          git commit -m 'Remove temporary quantity validation workflow'
+          git push
